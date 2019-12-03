@@ -100,7 +100,7 @@ namespace ConsoleApp8
         {
             byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 21);
-            _controlWriter.Write(8);
+            _controlWriter.Write((byte)8);
             _controlWriter.Write(sha);
             _controlWriter.Write(bytes, 0, bytes.Length);
             int length = _controlReader.ReadInt32() - 4;
@@ -116,14 +116,16 @@ namespace ConsoleApp8
             }
             return false;
         }
-        public bool StoreFile(byte[] file, string name)
+        public bool StoreFile(byte[] file, string name, int count=-1)
         {
+            if (count == -1)
+                count = file.Length;
             byte[] bytes = Encoding.UTF8.GetBytes(name);
-            _controlWriter.Write(bytes.Length + 9 + file.Length);
+            _controlWriter.Write(bytes.Length + 9 + count);
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
             _controlWriter.Write(bytes, 0, bytes.Length);
-            _controlWriter.Write(file, 0, file.Length);
+            _controlWriter.Write(file, 0, count);
             int length = _controlReader.ReadInt32() - 4;
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
@@ -137,14 +139,16 @@ namespace ConsoleApp8
             }
             return false;
         }
-        public bool StoreFile(char[] file, string name)
+        public bool StoreFile(char[] file, string name, int count = -1)
         {
+            if (count == -1)
+                count = file.Length;
             byte[] bytes = Encoding.UTF8.GetBytes(name);
-            _controlWriter.Write(bytes.Length + 9 + file.Length);
+            _controlWriter.Write(bytes.Length + 9 + count);
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
             _controlWriter.Write(bytes, 0, bytes.Length);
-            _controlWriter.Write(file, 0, file.Length);
+            _controlWriter.Write(file, 0, count);
             int length = _controlReader.ReadInt32() - 4;
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
@@ -160,8 +164,10 @@ namespace ConsoleApp8
         }
         public bool StoreFile(Stream file, string name)
         {
+            file.Position = 0;
             byte[] buffer = new byte[file.Length];
             file.Read(buffer, 0, buffer.Length);
+            file.Position = 0;
             byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write((int)(bytes.Length + 9 + file.Length));
             _controlWriter.Write((byte)4);
@@ -259,7 +265,7 @@ namespace ConsoleApp8
         private byte[] UnblockResource(byte[] sha1, string name)
         {
             
-               if(PathaIDFS.TryRemove(name,out Tuple<byte[], FileStream> tuple))
+              if(PathaIDFS.TryRemove(name,out Tuple<byte[], FileStream> tuple))
             {
                 tuple.Item2.Dispose();
                 string s1 = "SI" + name;
@@ -310,6 +316,15 @@ namespace ConsoleApp8
 
         private byte[] Delete(string name)
         {
+            if(!File.Exists(name))
+            {
+                string s1 = "SI" + name;
+                var temp1 = Encoding.UTF8.GetBytes(s1);
+                _controlWriter.Write(5 + temp1.Length);
+                _controlWriter.Write((byte)3);
+                _controlWriter.Write(temp1);
+                return new byte[0];
+            }
             if (PathaIDFS.TryRemove(name, out Tuple<byte[], FileStream> tuple))
             {
                 tuple.Item2.Dispose();
@@ -338,15 +353,20 @@ namespace ConsoleApp8
                 for (int i = 1; i < b.Length-1; i++)
                     directory += @"\" + b[i];
                 Directory.CreateDirectory(directory);
+                bool wasdone = false;
                 Tuple<byte[], FileStream> tuple;
                 FileStream fs;
                 if (PathaIDFS.TryGetValue(pathname, out tuple) && Chord.comp.Equals(tuple.Item1, Chord.ID))
+                {
                     fs = tuple.Item2;
+                    wasdone = true;
+                }
                 else
                     fs = new FileStream(pathname, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
                 fs.Position = 0;
                 CopyStream(data, fs, length + 5);
-                fs.Dispose();
+                if(!wasdone)
+                 fs.Dispose();
                 string s2 = "SI" + pathname;
                 var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
@@ -544,7 +564,7 @@ namespace ConsoleApp8
             {
                 FileStream fs = new FileStream(name, FileMode.Open, FileAccess.Read, FileShare.Read);
                 byte[] bytes = Encoding.UTF8.GetBytes(name);
-                _controlWriter.Write((int)fs.Length + 9 + bytes.Length);
+                _controlWriter.Write((int)(fs.Length + 9 + bytes.Length));
                 _controlWriter.Write((byte)7);
                 _controlWriter.Write(bytes.Length);
                 _controlWriter.Write(bytes);

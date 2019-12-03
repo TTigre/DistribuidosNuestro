@@ -42,6 +42,13 @@ namespace SharpFtpServer
     {
         public static FileStream CreateDirectory(string pathname)
         {
+            string[] a = pathname.Split('\\');
+            if(a[a.Length-1]=="infod")
+            {
+                pathname = a[0];
+                for (int i = 1; i < a.Length - 1; i++)
+                    pathname += @"\"+a[i];
+            }
             Directory.CreateDirectory(pathname);
             List<MyDirectory> directories = new List<MyDirectory>();
             XmlSerializer serializer = new XmlSerializer(directories.GetType(), new XmlRootAttribute("MyDirectory"));
@@ -70,7 +77,6 @@ namespace SharpFtpServer
         }
         public static FileStream AddAtDirectory(FileStream directory, string name,string realname, long size, bool isfile=false)
         {
-            Action a = () => { };
             List<MyDirectory> directories = new List<MyDirectory>();
             XmlSerializer serializer = new XmlSerializer(directories.GetType(), new XmlRootAttribute("MyDirectory"));
             directories = serializer.Deserialize(new StreamReader(directory)) as List<MyDirectory>;
@@ -83,6 +89,8 @@ namespace SharpFtpServer
                 IsFile = isfile
                 });
             directory.Position = 0;
+            directory.SetLength(0);
+            directory.Flush();
             StreamWriter w = new StreamWriter(directory);
                 serializer.Serialize(w, directories);
             directory.Position = 0;
