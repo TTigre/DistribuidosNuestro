@@ -13,7 +13,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using Proyecto_de_Distribuidos_01;
 
-
+//Este soy yo que estoy to tixa
 namespace SharpFtpServer
 {
     public static class YA
