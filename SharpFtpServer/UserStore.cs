@@ -27,7 +27,7 @@ namespace SharpFtpServer
                 _users.Add(new User {
                     Username = "anonymous",
                     Password = "test",
-                    HomeDir = "D:\\Test"
+                    HomeDir = @"C:\Test"
                 });
 
                 using (StreamWriter w = new StreamWriter("users.xml"))

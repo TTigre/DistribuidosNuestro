@@ -18,11 +18,11 @@ namespace SharpFtpServer
                 using (TCP_Server serverTCP = new TCP_Server(IPAddress.Any, Chord.port))
                 {
                     serverTCP.Start();
-                }
-                server.Start();
+                    server.Start();
 
-                Console.WriteLine("Press any key to stop...");
-                Console.ReadKey(true);
+                    Console.WriteLine("Press any key to stop...");
+                    Console.ReadKey(true);
+                }
             }
         }
     }

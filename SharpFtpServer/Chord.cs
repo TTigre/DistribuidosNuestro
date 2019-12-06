@@ -819,11 +819,9 @@ namespace Proyecto_de_Distribuidos_01
             ColaAEnviar.Enqueue(AEnviar);
             while(true)
             {
-                if(DiccioDeIDaIP.ContainsKey(id))
+                IPEndPoint result;
+                if(DiccioDeIDaIP.TryRemove(id, out result))
                 {
-                    var result= DiccioDeIDaIP[id];
-                    IPEndPoint ip = null;
-                    DiccioDeIDaIP.TryRemove(id, out ip);
                     return result;
                 }
                 else

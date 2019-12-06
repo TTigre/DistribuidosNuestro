@@ -34,7 +34,7 @@ namespace ConsoleApp8
         }
         public byte[] SearchFile(string name)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 5);
             _controlWriter.Write((byte)0);
             _controlWriter.Write(bytes, 0, bytes.Length);
@@ -44,18 +44,18 @@ namespace ConsoleApp8
             {
                 int namelength = _controlReader.ReadInt32();
                 byte[] file = _controlReader.ReadBytes(namelength);
-                string filename = Encoding.Unicode.GetString(file);
+                string filename = Encoding.UTF8.GetString(file);
                 if(filename==name)
                 {
                     return _controlReader.ReadBytes(length - 5 - namelength);
                 }
             }
-            return new byte[1];
+            return new byte[0];
 
         }
         public bool DeleteFile(string name)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 5);
             _controlWriter.Write((byte)5);
             _controlWriter.Write(bytes, 0, bytes.Length);
@@ -63,7 +63,8 @@ namespace ConsoleApp8
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
             {
-                string answer = _controlReader.ReadString();
+                byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                string answer = Encoding.UTF8.GetString(bytes2);
                 string resp = answer.Substring(0, 2);
                 string filename = answer.Substring(2, answer.Length - 2);
                 if (resp == "SI" && filename == name)
@@ -77,7 +78,7 @@ namespace ConsoleApp8
             byte type = 1;
             if (!IsRead)
                 type = 9;
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 21);
             _controlWriter.Write(type);
             _controlWriter.Write(sha);
@@ -86,7 +87,8 @@ namespace ConsoleApp8
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
             {
-                string answer = _controlReader.ReadString();
+                byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                string answer = Encoding.UTF8.GetString(bytes2);
                 string resp = answer.Substring(0, 2);
                 string filename = answer.Substring(2, answer.Length - 2);
                 if (resp == "SI" && filename == name)
@@ -96,7 +98,7 @@ namespace ConsoleApp8
         }
         public bool UnlockFile(string name, byte[] sha)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 21);
             _controlWriter.Write(8);
             _controlWriter.Write(sha);
@@ -105,7 +107,8 @@ namespace ConsoleApp8
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
             {
-                string answer = _controlReader.ReadString();
+                byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                string answer = Encoding.UTF8.GetString(bytes2);
                 string resp = answer.Substring(0, 2);
                 string filename = answer.Substring(2, answer.Length - 2);
                 if (resp == "SI" && filename == name)
@@ -115,7 +118,7 @@ namespace ConsoleApp8
         }
         public bool StoreFile(byte[] file, string name)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 9 + file.Length);
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
@@ -125,7 +128,8 @@ namespace ConsoleApp8
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
             {
-                string answer = _controlReader.ReadString();
+                byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                string answer = Encoding.UTF8.GetString(bytes2);
                 string resp = answer.Substring(0, 2);
                 string filename = answer.Substring(2, answer.Length - 2);
                 if (resp == "SI" && filename == name)
@@ -135,7 +139,7 @@ namespace ConsoleApp8
         }
         public bool StoreFile(char[] file, string name)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 9 + file.Length);
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
@@ -145,7 +149,8 @@ namespace ConsoleApp8
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
             {
-                string answer = _controlReader.ReadString();
+                byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                string answer = Encoding.UTF8.GetString(bytes2);
                 string resp = answer.Substring(0, 2);
                 string filename = answer.Substring(2, answer.Length - 2);
                 if (resp == "SI" && filename == name)
@@ -157,8 +162,8 @@ namespace ConsoleApp8
         {
             byte[] buffer = new byte[file.Length];
             file.Read(buffer, 0, buffer.Length);
-            byte[] bytes = Encoding.Unicode.GetBytes(name);
-            _controlWriter.Write(bytes.Length + 9 + file.Length);
+            byte[] bytes = Encoding.UTF8.GetBytes(name);
+            _controlWriter.Write((int)(bytes.Length + 9 + file.Length));
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
             _controlWriter.Write(bytes, 0, bytes.Length);
@@ -167,7 +172,8 @@ namespace ConsoleApp8
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
             {
-                string answer = _controlReader.ReadString();
+                byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                string answer = Encoding.UTF8.GetString(bytes2);
                 string resp = answer.Substring(0, 2);
                 string filename = answer.Substring(2, answer.Length - 2);
                 if (resp == "SI" && filename == name)
@@ -181,7 +187,7 @@ namespace ConsoleApp8
             int length = _controlReader.ReadInt32() - 4;
             byte[] instruction = _controlReader.ReadBytes(length);
             byte[] answers = Response(instruction, length);
-            _controlWriter.Write(answers);
+            //_controlWriter.Write(answers);
         }
         public byte[] Response(byte[] instruction, int Length)
         {
@@ -190,13 +196,13 @@ namespace ConsoleApp8
             switch (Type)
             {
                 case 0:
-                    string name = Encoding.Unicode.GetString(Data, 1, Data.Length - 1);
+                    string name = Encoding.UTF8.GetString(Data, 1, Data.Length - 1);
                     return Read(name);
                 case 1:
                     byte[] SHA1 = new byte[16];
                     for (int i = 1; i < 17; i++)
                         SHA1[i-1] = Data[i];
-                    name = Encoding.Unicode.GetString(Data, 17, Data.Length - 17);
+                    name = Encoding.UTF8.GetString(Data, 17, Data.Length - 17);
                     return BlockResourceRead(SHA1, name);
                 case 2:
                     byte[] origin = new byte[16];
@@ -204,37 +210,37 @@ namespace ConsoleApp8
                         origin[i - 1] = Data[i];
                     byte[] solicitant = new byte[16];
                     for (int i = 17; i < 33; i++)
-                        solicitant[i-1]= Data[i];
-                    name = Encoding.Unicode.GetString(Data, 33, Data.Length - 33);
+                        solicitant[i-17]= Data[i];
+                    name = Encoding.UTF8.GetString(Data, 33, Data.Length - 33);
                     return BlockResourceRead(origin, solicitant, name);
                 case 3:
-                    string answer = Encoding.Unicode.GetString(Data, 1, Data.Length - 1);
+                    string answer = Encoding.UTF8.GetString(Data, 1, Data.Length - 1);
                     return Response(answer);
                 case 4:
-                    int length = Data[1] + Data[2] << 8 + Data[3] << 16 + Data[4] << 24;
-                    name = Encoding.Unicode.GetString(Data, 5, length);
+                    int length = Data[1] + (Data[2] << 8) + (Data[3] << 16) + (Data[4] << 24);
+                    name = Encoding.UTF8.GetString(Data, 5, length);
                     return Store(name, length, Data);
                 case 5:
-                    name = Encoding.Unicode.GetString(Data, 1, Data.Length - 1);
+                    name = Encoding.UTF8.GetString(Data, 1, Data.Length - 1);
                     return Delete(name);
                 case 6:
                     int type = Data[1];
                     return CompletedInstruction(type);
                 case 7:
-                    length = Data[1] + Data[2] << 8 + Data[3] << 16 + Data[4] << 24;
-                    name = Encoding.Unicode.GetString(Data, 5, length);
+                    length = Data[1] + (Data[2] << 8) + (Data[3] << 16) + (Data[4] << 24);
+                    name = Encoding.UTF8.GetString(Data, 5, length);
                     return Recieve(name, length, Data);
                 case 8:
                     SHA1 = new byte[16];
                     for (int i = 1; i < 17; i++)
                         SHA1[i - 1] = Data[i];
-                    name = Encoding.Unicode.GetString(Data, 17, Data.Length - 17);
+                    name = Encoding.UTF8.GetString(Data, 17, Data.Length - 17);
                     return UnblockResource(SHA1, name);
                 case 9:
                     SHA1 = new byte[16];
                     for (int i = 1; i < 17; i++)
                         SHA1[i - 1] = Data[i];
-                    name = Encoding.Unicode.GetString(Data, 17, Data.Length - 17);
+                    name = Encoding.UTF8.GetString(Data, 17, Data.Length - 17);
                     return BlockResourceRead(SHA1, name,false);
                 case 10:
                     origin = new byte[16];
@@ -243,7 +249,7 @@ namespace ConsoleApp8
                     solicitant = new byte[16];
                     for (int i = 17; i < 33; i++)
                         solicitant[i - 1] = Data[i];
-                    name = Encoding.Unicode.GetString(Data, 33, Data.Length - 33);
+                    name = Encoding.UTF8.GetString(Data, 33, Data.Length - 33);
                     return BlockResourceRead(origin, solicitant, name,false);
                 default:
                     break;
@@ -257,14 +263,14 @@ namespace ConsoleApp8
             {
                 tuple.Item2.Dispose();
                 string s1 = "SI" + name;
-                var temp1 = Encoding.Unicode.GetBytes(s1);
+                var temp1 = Encoding.UTF8.GetBytes(s1);
                 _controlWriter.Write(5 + temp1.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp1);
                 return new byte[0];
             }
             string s2 = "NO" + name;
-            var temp2 = Encoding.Unicode.GetBytes(s2);
+            var temp2 = Encoding.UTF8.GetBytes(s2);
             _controlWriter.Write(5 + temp2.Length);
             _controlWriter.Write((byte)3);
             _controlWriter.Write(temp2);
@@ -280,7 +286,7 @@ namespace ConsoleApp8
                 fs.Position = 0;
                 CopyStream(data, fs, length + 5);
                 string s2 = "SI" + pathname;
-                var temp2 = Encoding.Unicode.GetBytes(s2);
+                var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp2);
@@ -288,7 +294,7 @@ namespace ConsoleApp8
             catch
             {
                 string s2 = "NO" + pathname;
-                var temp2 = Encoding.Unicode.GetBytes(s2);
+                var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp2);
@@ -309,14 +315,14 @@ namespace ConsoleApp8
                 tuple.Item2.Dispose();
                 File.Delete(name);
                 string s1 = "SI" + name;
-                var temp1 = Encoding.Unicode.GetBytes(s1);
+                var temp1 = Encoding.UTF8.GetBytes(s1);
                 _controlWriter.Write(5 + temp1.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp1);
                 return new byte[0];
             }
             string s2 = "NO" + name;
-            var temp2 = Encoding.Unicode.GetBytes(s2);
+            var temp2 = Encoding.UTF8.GetBytes(s2);
             _controlWriter.Write(5 + temp2.Length);
             _controlWriter.Write((byte)3);
             _controlWriter.Write(temp2);
@@ -327,12 +333,22 @@ namespace ConsoleApp8
         {
             try
             {
-                Directory.CreateDirectory(pathname);
-                FileStream fs = PathaIDFS[pathname].Item2;
+                var b = pathname.Split('\\');
+                string directory = b[0];
+                for (int i = 1; i < b.Length-1; i++)
+                    directory += @"\" + b[i];
+                Directory.CreateDirectory(directory);
+                Tuple<byte[], FileStream> tuple;
+                FileStream fs;
+                if (PathaIDFS.TryGetValue(pathname, out tuple) && Chord.comp.Equals(tuple.Item1, Chord.ID))
+                    fs = tuple.Item2;
+                else
+                    fs = new FileStream(pathname, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
                 fs.Position = 0;
                 CopyStream(data, fs, length + 5);
+                fs.Dispose();
                 string s2 = "SI" + pathname;
-                var temp2 = Encoding.Unicode.GetBytes(s2);
+                var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp2);
@@ -340,7 +356,7 @@ namespace ConsoleApp8
             catch
             {
                 string s2 = "NO" + pathname;
-                var temp2 = Encoding.Unicode.GetBytes(s2);
+                var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp2);
@@ -355,14 +371,15 @@ namespace ConsoleApp8
         }
 
         //Falta cambiar el comparador por defecto de byte[]
-        static ConcurrentDictionary<string,Tuple<byte[],FileStream>> PathaIDFS = new ConcurrentDictionary<string, Tuple<byte[], FileStream>>();
+        public static ConcurrentDictionary<string,Tuple<byte[],FileStream>> PathaIDFS = new ConcurrentDictionary<string, Tuple<byte[], FileStream>>();
         static int replicacion = 1;
 
         private byte[] BlockResourceRead(byte[] origin, byte[] solicitant, string name, bool isRead=true)
         {
+            FileStream fs = null;
             try
             {
-                FileStream fs = null;
+                
                 if (PathaIDFS.ContainsKey(name) && Chord.comp.Compare(solicitant,PathaIDFS[name].Item1)==1)////// Ojoooooooooo hay que copiar el comparador
                 {
                     goto no;
@@ -379,9 +396,9 @@ namespace ConsoleApp8
                 }
 
                 fs = new FileStream(name, modo, acceso, share);
-
+                PathaIDFS[name] = new Tuple<byte[], FileStream>(origin, fs);
                 string s2 = "SI" + name;
-                var temp2 = Encoding.Unicode.GetBytes(s2);
+                var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp2);
@@ -389,7 +406,7 @@ namespace ConsoleApp8
 
             no:
                 string s = "NO" + name;
-                var temp = Encoding.Unicode.GetBytes(s);
+                var temp = Encoding.UTF8.GetBytes(s);
                 _controlWriter.Write(5 + temp.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp);
@@ -400,7 +417,7 @@ namespace ConsoleApp8
             catch
             {
                 string s = "NO" + name;
-                var temp = Encoding.Unicode.GetBytes(s);
+                var temp = Encoding.UTF8.GetBytes(s);
                 _controlWriter.Write(5 + temp.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp);
@@ -453,22 +470,24 @@ namespace ConsoleApp8
                 fs = new FileStream(name, modo, acceso, share);
                 PathaIDFS[name] = new Tuple<byte[], FileStream>(sha1, fs);
                 var receivers = Chord.WHOISTHIS(name);
-                byte[] bytes = Encoding.Unicode.GetBytes(name);
+                byte[] bytes = Encoding.UTF8.GetBytes(name);
                 byte[] respuestica = new byte[bytes.Length + 32];
    
                 for(int i=0;i<16;i++)
                 {
-                    respuestica[i + 5] = sha1[i];
-                    respuestica[i + 21] = ID[i];
+                    respuestica[i] = sha1[i];
+                    respuestica[i + 16] = ID[i];
                 }
                 for(int i=0; i<bytes.Length;i++)
                 {
-                    respuestica[i + 37] = bytes[i];
+                    respuestica[i + 32] = bytes[i];
                 }
-                for(int i=1;i<1<<replicacion;i++)
+                for(int i=0;i<1<<replicacion;i++)
                 {
+                    if (Chord.comp.Equals(new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port), receivers[i]))
+                        continue;
                     TcpClient a = new TcpClient();
-                    a.Connect(receivers[i - 1]);
+                    a.Connect(receivers[i]);
                     var stream=a.GetStream();
                     var bin = new BinaryWriter(stream);
                     bin.Write(respuestica.Length + 5);
@@ -479,7 +498,8 @@ namespace ConsoleApp8
                     byte instruction = binRes.ReadByte();
                     if (instruction == 3)
                     {
-                        string answer = binRes.ReadString();
+                        byte[] bytes2 = _controlReader.ReadBytes(length - 1);
+                        string answer = Encoding.UTF8.GetString(bytes2);
                         string resp = answer.Substring(0, 2);
                         string filename = answer.Substring(2, answer.Length - 2);
                         if (resp == "NO" || filename != name)
@@ -492,14 +512,14 @@ namespace ConsoleApp8
 
                 }
                 string s2 = "SI" + name;
-                var temp2 = Encoding.Unicode.GetBytes(s2);
+                var temp2 = Encoding.UTF8.GetBytes(s2);
                 _controlWriter.Write(5 + temp2.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp2);
                 return new byte[0];
             no:
                 string s = "NO" + name;
-                var temp = Encoding.Unicode.GetBytes(s);
+                var temp = Encoding.UTF8.GetBytes(s);
                 _controlWriter.Write(5 + temp.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp);
@@ -510,7 +530,7 @@ namespace ConsoleApp8
             catch
             {
                 string s = "NO" + name;
-                var temp = Encoding.Unicode.GetBytes(s);
+                var temp = Encoding.UTF8.GetBytes(s);
                 _controlWriter.Write(5 + temp.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp);
@@ -523,7 +543,7 @@ namespace ConsoleApp8
             try
             {
                 FileStream fs = new FileStream(name, FileMode.Open, FileAccess.Read, FileShare.Read);
-                byte[] bytes = Encoding.Unicode.GetBytes(name);
+                byte[] bytes = Encoding.UTF8.GetBytes(name);
                 _controlWriter.Write((int)fs.Length + 9 + bytes.Length);
                 _controlWriter.Write((byte)7);
                 _controlWriter.Write(bytes.Length);
@@ -533,7 +553,7 @@ namespace ConsoleApp8
             }
             catch
             {
-                byte[] bytes = Encoding.Unicode.GetBytes("NO"+name);
+                byte[] bytes = Encoding.UTF8.GetBytes("NO"+name);
                 _controlWriter.Write(5 + bytes.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(bytes);

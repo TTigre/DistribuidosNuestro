@@ -8,12 +8,19 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Xml.Serialization;
+using System.Threading;
+using System.Collections.Concurrent;
 using System.Text;
 using Proyecto_de_Distribuidos_01;
 
 
 namespace SharpFtpServer
 {
+    public static class YA
+    {
+        public static int ya = 0;
+    }
+    
     public class ClientConnection : IDisposable
     {
         private class DataConnectionOperation
@@ -22,7 +29,7 @@ namespace SharpFtpServer
             public string Arguments { get; set; }
         }
 
-
+        static ConcurrentDictionary<string,bool> dict = new ConcurrentDictionary<string, bool>();
 
         #region Copy Stream Implementations
 
@@ -76,7 +83,7 @@ namespace SharpFtpServer
                 List<IPEndPoint> endpoints = Whois(partname);
                 foreach (var end in endpoints)
                 {
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     if (!client.StoreFile(buffer, partname))
                         return 0;
                 }
@@ -95,7 +102,7 @@ namespace SharpFtpServer
                 for (int j = 0; j < endpoints.Count; j++)
                 {
                     var end = endpoints[j];
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     byte[] buffer = client.SearchFile(partname);
                     if (buffer.Length != 0)
                     {
@@ -121,7 +128,7 @@ namespace SharpFtpServer
                 for (int j = 0; j < endpoints.Count; j++)
                 {
                     var end = endpoints[j];
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     byte[] cbuffer = client.SearchFile(partname);
                     char[] buffer = Encoding.ASCII.GetChars(cbuffer);
                     if (buffer.Length != 0)
@@ -158,7 +165,7 @@ namespace SharpFtpServer
                     List<IPEndPoint> endpoints = Whois(partname);
                     foreach (var end in endpoints)
                     {
-                        TCP_Client client = new TCP_Client(new TcpClient(end));
+                        TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                         if (!client.StoreFile(buffer, partname))
                             return 0;
                     }
@@ -620,19 +627,29 @@ namespace SharpFtpServer
             {
                 _root = _currentUser.HomeDir;
                 _currentDirectory = _root;
-                if (Chord.SoyElPrimero)
+                if (Chord.SoyElPrimero && YA.ya==0)
                 {
+                    Monitor.Enter(_root);
+                    YA.ya++;
+                    Monitor.Exit(_root);
                     Directory.CreateDirectory(_root);
+                    foreach (var a in Directory.GetDirectories(_root))
+                        DeleteDirectory(a);
+                    foreach (var b in Directory.GetFiles(_root))
+                        File.Delete(b);
                     string pathname = NormalizeFilename(_root);
+                    byte[] buffer;
                     using (var fs = DirectoryMethods.CreateDirectory(pathname))
                     {
-                        var dirend = Whois(GetDirectoryName(pathname));
-                        foreach (var end in dirend)
-                        {
-                            TCP_Client client = new TCP_Client(new TcpClient(end));
-                            if (!client.StoreFile(fs, GetDirectoryName(pathname)))
-                                return "550 Directory Not Found";
-                        }
+                        buffer = new byte[fs.Length];
+                        fs.Read(buffer, 0, buffer.Length);
+                    }
+                    var dirend = Whois(GetDirectoryName(pathname));
+                    foreach (var end in dirend)
+                    {
+                        TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                        if (!client.StoreFile(buffer, GetDirectoryName(pathname)))
+                            return "530 Not logged in";
                     }
                 }
                 return "230 User logged in";
@@ -641,6 +658,15 @@ namespace SharpFtpServer
             {
                 return "530 Not logged in";
             }
+        }
+
+        private void DeleteDirectory(string root)
+        {
+            foreach(var a in Directory.GetDirectories(root))
+                DeleteDirectory(a);
+            foreach (var b in Directory.GetFiles(root))
+                File.Delete(b);
+            Directory.Delete(root);
         }
 
         private string ChangeWorkingDirectory(string pathname)
@@ -798,9 +824,10 @@ namespace SharpFtpServer
 
             if (pathname != null)
             {
-                if (LockDirectory(pathname, false))
+               
+                if (GetDirectory(pathname))
                 {
-                    if (GetDirectory(pathname))
+                    if (LockDirectory(pathname, false))
                     {
                         List<MyDirectory> directories = new List<MyDirectory>();
                         string directoryname = GetDirectoryName(pathname);
@@ -816,7 +843,7 @@ namespace SharpFtpServer
                                 for(int i=0;i<dirend.Count;i++)
                                 {
                                     var end = dirend[i];
-                                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                                     if (!client.StoreFile(fs, GetDirectoryName(pathname)))
                                         return "552 Requested file action aborted.";
                                 }
@@ -840,9 +867,10 @@ namespace SharpFtpServer
         }
         private bool RemoveDirectory(string pathname)
         {
-            if (LockDirectory(pathname, false))
+            
+            if (!GetDirectory(pathname))
             {
-                if (!GetDirectory(pathname))
+                if (LockDirectory(pathname, false))
                 {
                     UnlockDirectory(pathname);
                     return false;
@@ -864,7 +892,7 @@ namespace SharpFtpServer
                 var dirend = Whois(GetDirectoryName(pathname));
                 foreach (var end in dirend)
                 {
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     if (!client.DeleteFile(GetDirectoryName(pathname)))
                     {
                         UnlockDirectory(pathname);
@@ -873,7 +901,6 @@ namespace SharpFtpServer
                 }
                 return true;
             }
-            UnlockDirectory(pathname);
             return false;
         }
         private string RemoveDir(string pathname)
@@ -897,34 +924,49 @@ namespace SharpFtpServer
 
         private string CreateDir(string pathname)
         {
+            Thread.Sleep(1000);
             pathname = NormalizeFilename(pathname);
-
+            if(!dict.TryAdd(pathname, true))
+                return "550 Directory not found";
+            
             if (pathname != null)
             {
                 if (!GetDirectory(pathname))
                 {
+                    string c = ParentDirectory(pathname);
+                    byte[] buffer;
                     using (var fs = DirectoryMethods.CreateDirectory(pathname))
                     {
-                        var dirend = Whois(GetDirectoryName(pathname));
-                        foreach (var end in dirend)
-                        {
-                            TCP_Client client = new TCP_Client(new TcpClient(end));
-                            if (!client.StoreFile(fs, GetDirectoryName(pathname)))
-                                return "550 Directory Not Found";
-                        }
+                        buffer = new byte[fs.Length];
+                        fs.Read(buffer, 0, buffer.Length);
+                        
                     }
-                    if(GetDirectory(ParentDirectory(pathname)))
+                    
+                    var dirend = Whois(GetDirectoryName(pathname));
+                    foreach (var end in dirend)
+                    {
+                        TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                        if (!client.StoreFile(buffer, GetDirectoryName(pathname)))
+                            return "550 Directory Not Copied";
+                    }
+                    
+                    if (GetDirectory(ParentDirectory(pathname)))
                     {
                         using (FileStream f = new FileStream(ParentDirectory(pathname), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
                         {
-                            var fs = DirectoryMethods.AddAtDirectory(f, pathname,pathname, 0);
-                            var dirend1 = Whois(ParentDirectory(pathname));
-                            foreach (var end in dirend1)
-                            {
-                                TCP_Client client = new TCP_Client(new TcpClient(end));
-                                if (!client.StoreFile(fs, GetDirectoryName(pathname)))
-                                    return "550 Directory Not Found";
-                            }
+                            DirectoryMethods.AddAtDirectory(f, pathname,pathname, 0);
+                            f.Position = 0;
+                            buffer = new byte[f.Length];
+                            f.Read(buffer, 0, buffer.Length);
+                            f.Dispose();
+
+                        }
+                        var dirend1 = Whois(ParentDirectory(pathname));
+                        foreach (var end in dirend1)
+                        {
+                            TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                            if (!client.StoreFile(buffer, ParentDirectory(pathname)))
+                                return "550 Parent Directory Not Copied";
                         }
                     }
                     else
@@ -936,7 +978,6 @@ namespace SharpFtpServer
                 {
                     return "550 Directory already exists";
                 }
-
                 return "250 Requested file action okay, completed";
             }
 
@@ -945,11 +986,11 @@ namespace SharpFtpServer
 
         private string ParentDirectory(string pathname)
         {
-            string[] parts = pathname.Split('/');
+            string[] parts = pathname.Split('\\');
             string name = parts[0];
-            for (int i = 1; i < parts.Length - 2; i++)
-                name += "/" + parts[i];
-            name += "/infod";
+            for (int i = 1; i < parts.Length - 1; i++)
+                name += @"\" + parts[i];
+            name += @"\infod";
             return name;
         }
 
@@ -1121,15 +1162,35 @@ namespace SharpFtpServer
 
             renameFrom = NormalizeFilename(renameFrom);
             renameTo = NormalizeFilename(renameTo);
+            if(!GetDirectory(renameFrom))
+                return "450 Requested file action not taken";
+            if (!LockDirectory(renameFrom))
+            {
 
-                if (LockDirectory(renameFrom, false))
+                return "450 Requested file action not taken";
+            }
+            using (FileStream fs = new FileStream(GetDirectoryName(renameTo), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                var dirend1 = Whois(GetDirectoryName(renameTo));
+                foreach (var end in dirend1)
                 {
-                    if (!GetDirectory(renameFrom))
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                    if (!client.StoreFile(fs, GetDirectoryName(renameTo)))
                     {
-                        UnlockDirectory(renameFrom);
+                        UnlockDirectory(GetDirectoryName(renameTo));
+                        return "450 Requested file action not taken";
+                    }
+                }
+            }
+            UnlockDirectory(ParentDirectory(renameFrom));
+            if (!GetDirectory(ParentDirectory(renameFrom)))
+                {
+                    if (!LockDirectory(ParentDirectory(renameFrom), false))
+                    {
+                       
                          return "450 Requested file action not taken";
                     }
-                    using (FileStream fs = new FileStream(GetDirectoryName(renameFrom), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    using (FileStream fs = new FileStream(ParentDirectory(renameFrom), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
                     {
                         List<MyDirectory> directories = new List<MyDirectory>();
                         string directoryname = GetDirectoryName(renameFrom);
@@ -1147,16 +1208,17 @@ namespace SharpFtpServer
                     {
                         serializer2.Serialize(w, directories);
                     }
-                    var dirend = Whois(GetDirectoryName(renameFrom));
+                    var dirend = Whois(GetDirectoryName(ParentDirectory(renameFrom)));
                     foreach (var end in dirend)
                     {
-                        TCP_Client client = new TCP_Client(new TcpClient(end));
-                        if (!client.StoreFile(fs, GetDirectoryName(renameFrom)))
+                        TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                        if (!client.StoreFile(fs, GetDirectoryName(ParentDirectory(renameFrom))))
                         {
-                            UnlockDirectory(renameFrom);
+                            UnlockDirectory(ParentDirectory(renameFrom));
                             return "450 Requested file action not taken";
                         }
                     }
+                    UnlockDirectory(ParentDirectory(renameFrom));
                 }
                 }
                 else
@@ -1230,11 +1292,11 @@ namespace SharpFtpServer
             directories = serializer2.Deserialize(new StreamReader(directoryname)) as List<MyDirectory>;
             foreach (var b in directories.Where(i => i.Name == pathname))
                 descname = b.Realname+".info";
-            if (!LockDescriptor(descname))
+            if (!GetDescriptor(descname))
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
-            if (!GetDescriptor(descname))
+            if (!LockDescriptor(descname))
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
@@ -1271,22 +1333,20 @@ namespace SharpFtpServer
                 descname = b.Realname+ticks+ ".info";
             long bytes = 0;
 
-            using (FileStream fs = new FileStream(pathname, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan))
-            {
                 bytes = StoreStream(dataStream, pathname, ticks,0);
                 if(bytes==0)
                     return "552 Requested file action aborted.";
                 string dirname = GetDirectoryName(pathname);
-                if(!LockDirectory(pathname))
+                if(!GetDirectory(pathname))
                     return "552 Requested file action aborted.";
-                if (!GetDirectory(pathname))
+                if (!LockDirectory(pathname, false))
                     return "552 Requested file action aborted.";
                 FileStream directory = new FileStream(dirname, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
                 FileStream descriptor = DirectoryMethods.CreateDescriptor(pathname + ticks, bytes);
                 List<IPEndPoint> descEnd = Whois(descname);
                 foreach (var end in descEnd)
                 {
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     if (!client.StoreFile(descriptor, descname))
                         return "552 Requested file action aborted.";
                 }
@@ -1295,7 +1355,7 @@ namespace SharpFtpServer
                 List<IPEndPoint> dirEnd = Whois(dirname);
                 foreach (var end in dirEnd)
                 {
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     if (!client.StoreFile(directory, dirname))
                         return "552 Requested file action aborted.";
                 }
@@ -1303,7 +1363,6 @@ namespace SharpFtpServer
                 if (!UnlockDirectory(pathname))
                     return "552 Requested file action aborted.";
 
-            }
 
             LogEntry logEntry = new LogEntry
             {
@@ -1327,7 +1386,7 @@ namespace SharpFtpServer
             int i = 0;
             while(i<ends.Count)
             {
-                TCP_Client client = new TCP_Client(new TcpClient(ends[i]));
+                TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
                 if (client.UnlockFile(directoryname, ID()))
                     return true;
                 client.Dispose();
@@ -1342,11 +1401,13 @@ namespace SharpFtpServer
 
         private string GetDirectoryName(string pathname)
         {
-            string[] parts = pathname.Split('/');
+            string[] parts = pathname.Split('\\');
             string name = parts[0];
-            for (int i = 1; i < parts.Length - 1; i++)
-                name += "/" + parts[i];
-            name += "/infod";
+            if (parts[parts.Length - 1] == "infod")
+                return pathname;
+            for (int i = 1; i < parts.Length; i++)
+                name += @"\" + parts[i];
+            name += @"\infod";
             return name;
         }
 
@@ -1357,7 +1418,7 @@ namespace SharpFtpServer
             int i = 0;
             while (i < ends.Count)
             {
-                TCP_Client client = new TCP_Client(new TcpClient(ends[i]));
+                TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
                 if (client.LockFile(directoryname, ID(), IsRead))
                 {
                     client.Dispose();
@@ -1375,18 +1436,25 @@ namespace SharpFtpServer
             int i = 0;
             while (i < ends.Count)
             {
-                TCP_Client client = new TCP_Client(new TcpClient(ends[i]));
+                TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
                 byte[] bytes = client.SearchFile(directoryname);
                 if (bytes.Length!=0)
                 {
-                    using (FileStream directory = new FileStream(directoryname, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+                    try
                     {
-                        directory.Write(bytes, 0, bytes.Length);
+                        using (FileStream directory = new FileStream(directoryname, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None))
+                        {
+                            directory.Write(bytes, 0, bytes.Length);
+                        }
+                        client.Dispose();
+                        return true;
                     }
-                    client.Dispose();
-                    return true;
+                    catch
+                    {
+                        return false;
+                    }
                 }
-                    
+                i++;    
                 client.Dispose();
             }
             return false;
@@ -1407,11 +1475,11 @@ namespace SharpFtpServer
             directories = serializer2.Deserialize(new StreamReader(directoryname)) as List<MyDirectory>;
             foreach (var b in directories.Where(i => i.Name == pathname))
                 descname = b.Realname+".info";
-            if (!LockDescriptor(descname))
+            if (!GetDescriptor(descname))
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
-            if (!GetDescriptor(descname))
+            if (!LockDescriptor(descname,false))
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
@@ -1425,7 +1493,7 @@ namespace SharpFtpServer
             for (int j = 0; j < ends.Count; j++)
             {
                 IPEndPoint end = ends[j];
-                TCP_Client client = new TCP_Client(new TcpClient(end));
+                TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                 byte[] pbytes = client.SearchFile(filename + ".part" + (parts - 1));
                 if (pbytes.Length != 0)
                 {
@@ -1440,7 +1508,7 @@ namespace SharpFtpServer
                         bytes += 1 << 18 - pbytes.Length;
                         foreach (var end1 in ends)
                         {
-                            TCP_Client client1 = new TCP_Client(new TcpClient(end1));
+                            TCP_Client client1 = new TCP_Client(new TcpClient(end1.Address.ToString(), end1.Port));
                             if (!client1.StoreFile(pbytes, filename + ".part" + (parts - 1)))
                                 return "552 Requested file action aborted.";
                         }
@@ -1461,7 +1529,7 @@ namespace SharpFtpServer
                         }
                         foreach (var end1 in ends)
                         {
-                            TCP_Client client1 = new TCP_Client(new TcpClient(end1));
+                            TCP_Client client1 = new TCP_Client(new TcpClient(end1.Address.ToString(), end1.Port));
                             if (!client1.StoreFile(chbytes, filename + ".part" + (parts - 1)))
                                 return "552 Requested file action aborted.";
                         }
@@ -1489,7 +1557,7 @@ namespace SharpFtpServer
 
                 foreach (var end in ends3)
                 {
-                    TCP_Client client = new TCP_Client(new TcpClient(end));
+                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
                     if (!client.StoreFile(desc, descname))
                         return "552 Requested file action aborted.";
                 }
@@ -1498,11 +1566,11 @@ namespace SharpFtpServer
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
-            if(!LockDirectory(pathname, false))
+            if(!GetDirectory(pathname))
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
-            if (!GetDirectory(pathname))
+            if (!LockDirectory(pathname, false))
             {
                 return "553 Requested action not taken. File name not allowed.";
             }
@@ -1521,7 +1589,7 @@ namespace SharpFtpServer
             {
                 foreach (var end2 in ends)
                 {
-                    TCP_Client client2 = new TCP_Client(new TcpClient(end2));
+                    TCP_Client client2 = new TCP_Client(new TcpClient(end2.Address.ToString(), end2.Port));
                     if (!client2.StoreFile(dir, directoryname))
                         return "552 Requested file action aborted.";
                 }
@@ -1549,7 +1617,7 @@ namespace SharpFtpServer
             int i = 0;
             while (i < ends.Count)
             {
-                TCP_Client client = new TCP_Client(new TcpClient(ends[i]));
+                TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
                 if (client.LockFile(pathname, ID(), IsRead))
                 {
                     client.Dispose();
@@ -1565,7 +1633,7 @@ namespace SharpFtpServer
             int i = 0;
             while (i < ends.Count)
             {
-                TCP_Client client = new TCP_Client(new TcpClient(ends[i]));
+                TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
                 if (client.UnlockFile(pathname, ID()))
                 {
                     client.Dispose();
@@ -1581,16 +1649,23 @@ namespace SharpFtpServer
             int i = 0;
             while (i < ends.Count)
             {
-                TCP_Client client = new TCP_Client(new TcpClient(ends[i]));
+                TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
                 byte[] bytes = client.SearchFile(pathname);
                 if (bytes.Length != 0)
                 {
-                    using (FileStream directory = new FileStream(pathname, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+                    try
                     {
-                        directory.Write(bytes, 0, bytes.Length);
+                        using (FileStream directory = new FileStream(pathname, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None))
+                        {
+                            directory.Write(bytes, 0, bytes.Length);
+                        }
+                        client.Dispose();
+                        return true;
                     }
-                    client.Dispose();
-                    return true;
+                    catch
+                    {
+                        return false;
+                    }
                 }
 
                 client.Dispose();
@@ -1608,15 +1683,17 @@ namespace SharpFtpServer
             List<MyDirectory> directories = new List<MyDirectory>();
             string directoryname = GetDirectoryName(pathname);
             XmlSerializer serializer2 = new XmlSerializer(directories.GetType(), new XmlRootAttribute("MyDirectory"));
-            directories = serializer2.Deserialize(new StreamReader(directoryname)) as List<MyDirectory>;
+            StreamReader a = new StreamReader(directoryname);
+            directories = serializer2.Deserialize(a) as List<MyDirectory>;
+            a.Dispose();
             StreamWriter dataWriter = new StreamWriter(dataStream, Encoding.ASCII);
             foreach (var dir in directories.Where(i=>!i.IsFile))
             {
                 string date = dir.Date < DateTime.Now - TimeSpan.FromDays(180) ?
                     dir.Date.ToString("MMM dd  yyyy") :
                     dir.Date.ToString("MMM dd HH:mm");
-
-                string line = string.Format("drwxr-xr-x    2 2003     2003     {0,8} {1} {2}", "4096", date, dir.Name);
+                string[] temp = dir.Name.Split('\\');
+                string line = string.Format("drwxr-xr-x    2 2003     2003     {0,8} {1} {2}", "4096", date, temp[temp.Length-1]);
 
                 dataWriter.WriteLine(line);
                 dataWriter.Flush();
@@ -1625,17 +1702,17 @@ namespace SharpFtpServer
 
             foreach (var f in directories.Where(i => i.IsFile))
             {
-
+                string[] temp = f.Name.Split('\\');
                 string date = f.Date < DateTime.Now - TimeSpan.FromDays(180) ?
                     f.Date.ToString("MMM dd  yyyy") :
                     f.Date.ToString("MMM dd HH:mm");
 
-                string line = string.Format("-rw-r--r--    2 2003     2003     {0,8} {1} {2}", f.Size, date, f.Name);
+                string line = string.Format("-rw-r--r--    2 2003     2003     {0,8} {1} {2}", f.Size, date, temp[temp.Length - 1]);
 
                 dataWriter.WriteLine(line);
                 dataWriter.Flush();
             }
-
+            dataWriter.Dispose();
             LogEntry logEntry = new LogEntry
             {
                 Date = DateTime.Now,

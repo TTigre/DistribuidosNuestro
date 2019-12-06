@@ -42,13 +42,14 @@ namespace SharpFtpServer
     {
         public static FileStream CreateDirectory(string pathname)
         {
+            Directory.CreateDirectory(pathname);
             List<MyDirectory> directories = new List<MyDirectory>();
             XmlSerializer serializer = new XmlSerializer(directories.GetType(), new XmlRootAttribute("MyDirectory"));
-            using (StreamWriter w = new StreamWriter(pathname + "infod")) 
+            using (StreamWriter w = new StreamWriter(pathname + "\\infod")) 
             {
                 serializer.Serialize(w, directories);
             }
-            return new FileStream(pathname + "infod", FileMode.Open);
+            return new FileStream(pathname + "\\infod", FileMode.Open);
         }
         public static FileStream CreateDescriptor(string pathname, long size)
         {
@@ -81,10 +82,10 @@ namespace SharpFtpServer
                 Size = size,
                 IsFile = isfile
                 });
-            using (StreamWriter w = new StreamWriter(directory))
-            {
+            directory.Position = 0;
+            StreamWriter w = new StreamWriter(directory);
                 serializer.Serialize(w, directories);
-            }
+            directory.Position = 0;
             return directory;
         }
        
