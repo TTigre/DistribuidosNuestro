@@ -148,6 +148,7 @@ namespace Proyecto_de_Distribuidos_01
         static Dictionary<IPEndPoint, byte[]> ShasNuevos = new Dictionary<IPEndPoint, byte[]>();
         public static Comparador comp = new Comparador();
         static UdpClient udp;
+        static TcpClient mitcp;
         static SHA1Managed Hasher = new SHA1Managed();
         public static byte[] ID;
         static byte[] VecinoSup;
@@ -314,6 +315,7 @@ namespace Proyecto_de_Distribuidos_01
                     IDs.Add(id1);
                     return response;
                 case 2:
+                    Console.WriteLine("Me llego un 2");
                     byte[] key = new byte[16];
                     for(int i=0; i<16; i++)
                     {
@@ -460,13 +462,13 @@ namespace Proyecto_de_Distribuidos_01
                             {
                                 Chord.VecinoSup[i] = nuevoID[i];
                             }
-                            VecinoSupIp = nuevo;
+                            VecinoSupIp = new IPEndPoint(new IPAddress(nuevo.Address.GetAddressBytes()),portnum);
                         }
                         for (int i = 0; i < 16; i++)
                         {
                             Chord.VecinoInf[i] = nuevoID[i];
                         }
-                        VecinoInfIp = nuevo;
+                        VecinoInfIp = new IPEndPoint(new IPAddress(nuevo.Address.GetAddressBytes()), portnum);
                     }
                     //if (comp.Equals(nuevo, new IPEndPoint(IPAddress.Parse("127.0.0.1"), Program.port)))
                     //    return response;
@@ -526,6 +528,7 @@ namespace Proyecto_de_Distribuidos_01
                     //}
                     return response;
                 case 6:
+                    Console.WriteLine("Me llego un 6");
                     byte[] cadenainicial = new byte[49];
                     random.NextBytes(cadenainicial);
                     cadenainicial[0] = 0;
@@ -560,6 +563,13 @@ namespace Proyecto_de_Distribuidos_01
                         }
                         VecinoInfIp = new IPEndPoint(new IPAddress(ip1), port1);
                         VecinoSupIp = new IPEndPoint(new IPAddress(ip2), port2);
+                        if (!comp.Equals(VecinoSupIp, mensaje.RemoteEndPoint))
+                        {
+                            if (comp.Equals(VecinoInfIp, VecinoSupIp))
+                                VecinoInfIp = mensaje.RemoteEndPoint;
+                            VecinoSupIp = mensaje.RemoteEndPoint;
+                            
+                        }
                     }
                     return response;
                 case 10:
@@ -759,7 +769,7 @@ namespace Proyecto_de_Distribuidos_01
                     if(sacado.tipo!=9)
                         DiccioDePaquetes[sacado] = true;
                 }
-                else if(!ColaYaEnviado.TryDequeue(out sacado))
+                else if(!ColaYaEnviado.TryPeek(out sacado))
                 {
                     Thread.Sleep(2);
                     continue;
@@ -774,11 +784,15 @@ namespace Proyecto_de_Distribuidos_01
                 }
                 else if(sacado.stopwatch.ElapsedMilliseconds<TiempoEsperaMaximo)
                 {
-                    Thread.Sleep((int)(TiempoEsperaMaximo - sacado.stopwatch.ElapsedMilliseconds));
+                    continue;
+                }
+                else if(sacado.stopwatch.ElapsedMilliseconds >= TiempoEsperaMaximo)
+                {
+                    ColaYaEnviado.TryDequeue(out sacado);
                 }
                 sacado.stopwatch.Restart();
                 sacado.Tries++;
-                udp.BeginSend(sacado.Mensaje, sacado.Mensaje.Length, sacado.DestinouOrigen, null, null);
+                udp.Send(sacado.Mensaje, sacado.Mensaje.Length, sacado.DestinouOrigen);
                 if(sacado.tipo!=9)
                    ColaYaEnviado.Enqueue(sacado);
             }
@@ -834,14 +848,18 @@ namespace Proyecto_de_Distribuidos_01
         {
             byte[] pedido=Encoding.Unicode.GetBytes(nombre);
             pedido=Hasher.ComputeHash(pedido);
+            start:
             List<Thread> threads = new List<Thread>();
             ConcurrentQueue<IPEndPoint> lista = new ConcurrentQueue<IPEndPoint>();
-            for(int i=0; i<1<<ReplicationLevel; i++)
+            List<byte[]> ListaDeRequests = new List<byte[]>();
+
+            for (int i = 0; i < 1 << ReplicationLevel; i++)
             {
                 byte[] request = new byte[16];
                 for (int e = 0; e < 16; e++)
                     request[e] = pedido[e];
-                request[0] =(byte)(pedido[0]+ (i << (7 - ReplicationLevel)));
+                request[0] = (byte)(pedido[0] + (i << (7 - ReplicationLevel)));
+                ListaDeRequests.Add(request);
                 List<object> parametros = new List<object>();
                 parametros.Add(lista);
                 parametros.Add(request);
@@ -849,8 +867,10 @@ namespace Proyecto_de_Distribuidos_01
                 worker.Start(parametros);
                 threads.Add(worker);
             }
-            foreach (var t in threads)
-                t.Join(3000);
+                foreach (var t in threads)
+                    t.Join(500);
+            if (lista.Count < (1 << ReplicationLevel))
+                goto start;
             var resp1 = lista.ToList();
             //resp1.RemoveAll(i => comp.Equals(i, new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port)));
             return resp1;
@@ -897,17 +917,27 @@ namespace Proyecto_de_Distribuidos_01
             HashSet<Paquete> YaRecibidos = new HashSet<Paquete>(comp);
             Queue<Paquete> ColaYaRecibidos = new Queue<Paquete>();
             HashSet<IPEndPoint> Listade6 = new HashSet<IPEndPoint>(comp);
-            var receiver = udp.BeginReceive(null, null);
+            //var receiver = udp.BeginReceive(null, null);
             int fivecount = 0;
             while (true)
             {
                 IPEndPoint origen=null;
-                byte[] mensaje=udp.EndReceive(receiver,ref origen);
-                receiver = udp.BeginReceive(null, null);
+
+                byte[] mensaje=udp.Receive(ref origen);
+                //receiver = udp.BeginReceive(null, null);
+                //if (comp.Equals(origen, new IPEndPoint(IPAddress.Parse("192.168.1.102"), 7001))&&mensaje[0]==1)
+                //    ;
+                if (mensaje[0] == 4)
+                    ;
+                if (mensaje[0] == 2)
+                    ;
+                if (mensaje[0] == 5)
+                    ;
+
                 if (origen == null)
                     continue;
                 Paquete LePaquet = new Paquete(mensaje, origen);
-                if(YaRecibidos.Contains(LePaquet)||(LePaquet.tipo==6&&Listade6.Contains(origen)))
+                if(YaRecibidos.Contains(LePaquet))
                 {
                     continue;
                 }
@@ -960,13 +990,13 @@ namespace Proyecto_de_Distribuidos_01
             int tiempoMS = 500;
             Thread system = new Thread(new ParameterizedThreadStart(MainNetworkHandler));
             Thread receiver = new Thread(Receptor);
-            Thread verifier = new Thread(new ParameterizedThreadStart(Verificador));
+            //Thread verifier = new Thread(new ParameterizedThreadStart(Verificador));
             system.Name = "MainNetworkHandler";
             receiver.Name = "Receptor";
-            verifier.Name = "Verificador";
+            //verifier.Name = "Verificador";
             system.Start(Parametro);
             receiver.Start();
-            verifier.Start(tiempoMS);
+            //verifier.Start(tiempoMS);
             //while(true)
             //{
             //    Thread.Sleep(2000);

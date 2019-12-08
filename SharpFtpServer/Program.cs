@@ -12,7 +12,9 @@ namespace SharpFtpServer
     {
         static void Main(string[] args)
         {
-            using (FtpServer server = new FtpServer(IPAddress.IPv6Any, 21))
+            Console.WriteLine("Introduzca el puerto FTP");
+            int puerto = int.Parse(Console.ReadLine());
+            using (FtpServer server = new FtpServer(IPAddress.IPv6Any, puerto))
             {
                 Chord.ChordStart();
                 using (TCP_Server serverTCP = new TCP_Server(IPAddress.Any, Chord.port))

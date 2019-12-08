@@ -114,12 +114,14 @@ namespace SharpFtpServer
                     byte[] buffer = client.SearchFile(partname);
                     if (buffer.Length != 0)
                     {
+                        client.Dispose();
                         output.Write(buffer, 0, buffer.Length);
                         total += buffer.Length;
                         break;
                     }
                     if (j == endpoints.Count - 1)
                         return 0;
+                    client.Dispose();
                 }
             }
             return total;
@@ -140,6 +142,7 @@ namespace SharpFtpServer
                     char[] buffer = Encoding.ASCII.GetChars(cbuffer);
                     if (buffer.Length != 0)
                     {
+                        client.Dispose();
                         StreamWriter wtr = new StreamWriter(output, Encoding.ASCII) ;
                             wtr.Write(buffer, 0, buffer.Length);
                             total += buffer.Length;
@@ -147,6 +150,7 @@ namespace SharpFtpServer
                     }
                     if (j == endpoints.Count - 1)
                         return 0;
+                    client.Dispose();
                 }
             }
             return total;
@@ -640,7 +644,7 @@ namespace SharpFtpServer
             {
                 _root = _currentUser.HomeDir;
                 _currentDirectory = _root;
-                if (Chord.SoyElPrimero && YA.ya==0)
+                if (YA.ya==0)
                 {
                     Monitor.Enter(_root);
                     YA.ya++;
@@ -1496,6 +1500,7 @@ namespace SharpFtpServer
                 if (!client.UnlockFile(directoryname, ID()))
                     return false;
                 client.Dispose();
+                i++;
             }
             return true;
         }
@@ -1531,6 +1536,7 @@ namespace SharpFtpServer
                     return true;
                 }
                 client.Dispose();
+                i++;
             }
             return false;
         }
@@ -1559,7 +1565,9 @@ namespace SharpFtpServer
                     }
                     catch
                     {
-                        return false;
+                        client.Dispose();
+                        i++;
+                        continue;
                     }
                 }
                 i++;    
@@ -1752,6 +1760,7 @@ namespace SharpFtpServer
                     return true;
                 }
                 client.Dispose();
+                i++;
             }
             return false;
         }
@@ -1762,12 +1771,13 @@ namespace SharpFtpServer
             while (i < ends.Count)
             {
                 TCP_Client client = new TCP_Client(new TcpClient(ends[i].Address.ToString(), ends[i].Port));
-                if (client.UnlockFile(pathname, ID()))
+                if (!client.UnlockFile(pathname, ID()))
                 {
                     client.Dispose();
                     return false;
                 }
                 client.Dispose();
+                i++;
             }
             return true;
         }
@@ -1792,10 +1802,12 @@ namespace SharpFtpServer
                     }
                     catch
                     {
-                        return false;
+                        client.Dispose();
+                        i++;
+                        continue;
                     }
                 }
-
+                i++;
                 client.Dispose();
             }
             return false;

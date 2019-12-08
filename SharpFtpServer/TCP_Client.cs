@@ -397,12 +397,18 @@ namespace ConsoleApp8
         private byte[] BlockResourceRead(byte[] origin, byte[] solicitant, string name, bool isRead=true)
         {
             FileStream fs = null;
+            Tuple<byte[], FileStream> tuple = null;
             try
             {
                 
-                if (PathaIDFS.ContainsKey(name) && Chord.comp.Compare(solicitant,PathaIDFS[name].Item1)==1)////// Ojoooooooooo hay que copiar el comparador
+                if (PathaIDFS.ContainsKey(name) && Chord.comp.Compare(solicitant,PathaIDFS[name].Item1)<=0)////// Ojoooooooooo hay que copiar el comparador
                 {
                     goto no;
+                }
+                else if(PathaIDFS.ContainsKey(name))
+                {
+                    PathaIDFS.TryRemove(name, out tuple);
+                    tuple.Item2.Dispose();
                 }
                 FileMode modo = FileMode.Open;
                 FileAccess acceso = FileAccess.Read;
@@ -441,6 +447,8 @@ namespace ConsoleApp8
                 _controlWriter.Write(5 + temp.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp);
+                if (fs != null)
+                    fs.Dispose();
                 return new byte[0];
             }
             throw new NotImplementedException();
@@ -470,10 +478,12 @@ namespace ConsoleApp8
 
         private byte[] BlockResourceRead(byte[] sha1, string name, bool IsRead=true)
         {
+            Tuple<byte[], FileStream> tuple;
+            TcpClient a=null;
+            FileStream fs = null;
             try
             {
                 List<byte[]> response = new List<byte[]>();
-                FileStream fs = null;
                 if(PathaIDFS.ContainsKey(name))
                 {
                     goto no;
@@ -489,6 +499,7 @@ namespace ConsoleApp8
                 }
                 fs = new FileStream(name, modo, acceso, share);
                 PathaIDFS[name] = new Tuple<byte[], FileStream>(sha1, fs);
+               
                 var receivers = Chord.WHOISTHIS(name);
                 byte[] bytes = Encoding.UTF8.GetBytes(name);
                 byte[] respuestica = new byte[bytes.Length + 32];
@@ -506,7 +517,7 @@ namespace ConsoleApp8
                 {
                     if (Chord.comp.Equals(new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port), receivers[i]))
                         continue;
-                    TcpClient a = new TcpClient();
+                    a = new TcpClient();
                     a.Connect(receivers[i]);
                     var stream=a.GetStream();
                     var bin = new BinaryWriter(stream);
@@ -538,6 +549,7 @@ namespace ConsoleApp8
                 _controlWriter.Write(temp2);
                 return new byte[0];
             no:
+                PathaIDFS.TryRemove(name,out tuple);
                 string s = "NO" + name;
                 var temp = Encoding.UTF8.GetBytes(s);
                 _controlWriter.Write(5 + temp.Length);
@@ -545,15 +557,22 @@ namespace ConsoleApp8
                 _controlWriter.Write(temp);
                 if(fs!=null)
                     fs.Dispose();
+                if (a != null)
+                    a.Close();
                 return new byte[0];
             }
             catch
             {
+                PathaIDFS.TryRemove(name, out tuple);
                 string s = "NO" + name;
                 var temp = Encoding.UTF8.GetBytes(s);
                 _controlWriter.Write(5 + temp.Length);
                 _controlWriter.Write((byte)3);
                 _controlWriter.Write(temp);
+                if (fs != null)
+                    fs.Dispose();
+                if (a != null)
+                    a.Close();
                 return new byte[0];
             }
         }
