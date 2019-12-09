@@ -17,7 +17,7 @@ namespace SharpFtpServer
             using (FtpServer server = new FtpServer(IPAddress.IPv6Any, puerto))
             {
                 Chord.ChordStart();
-                using (TCP_Server serverTCP = new TCP_Server(IPAddress.Any, Chord.port))
+                using (TCP_Server serverTCP = new TCP_Server(IPAddress.Any, Chord.port+1))
                 {
                     serverTCP.Start();
                     server.Start();

@@ -515,7 +515,7 @@ namespace ConsoleApp8
                 }
                 for(int i=0;i<1<<replicacion;i++)
                 {
-                    if (Chord.comp.Equals(new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port), receivers[i]))
+                    if (Chord.comp.Equals(new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port+1), receivers[i]))
                         continue;
                     a = new TcpClient();
                     a.Connect(receivers[i]);

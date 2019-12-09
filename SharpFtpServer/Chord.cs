@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Collections.Concurrent;
+using System.IO;
 
 namespace Proyecto_de_Distribuidos_01
 {
@@ -148,7 +149,7 @@ namespace Proyecto_de_Distribuidos_01
         static Dictionary<IPEndPoint, byte[]> ShasNuevos = new Dictionary<IPEndPoint, byte[]>();
         public static Comparador comp = new Comparador();
         static UdpClient udp;
-        static TcpClient mitcp;
+        static TcpListener mitcp;
         static SHA1Managed Hasher = new SHA1Managed();
         public static byte[] ID;
         static byte[] VecinoSup;
@@ -687,7 +688,8 @@ namespace Proyecto_de_Distribuidos_01
         {
             Console.WriteLine("Escoja un puerto UDP");
             port = int.Parse(Console.ReadLine());
-            udp = new UdpClient(port);
+            mitcp = new TcpListener(IPAddress.Any, port);
+            mitcp.Start();
             Console.WriteLine("Desea iniciar un nuevo sistema(0) o unirse(1)");
             string inicio = (Console.ReadLine());
             if (inicio == "0")
@@ -703,51 +705,59 @@ namespace Proyecto_de_Distribuidos_01
             else
             {
                 Console.WriteLine("Escriba el IP del nodo conocido del sistema");
-                var ipAcceso = IPAddress.Parse(Console.ReadLine());
+                var ipAcceso = Console.ReadLine();
                 Console.WriteLine("Escriba el puerto de acceso");
                 int puertoAcceso = int.Parse(Console.ReadLine());
                 byte[] peticionInicio = new byte[1];
                 peticionInicio[0] = 6;
                 Stopwatch stopwatch = new Stopwatch();
-                var envio = udp.Send(peticionInicio, 1, new IPEndPoint(ipAcceso, puertoAcceso));
-            receiveStart:
-                var recibir = udp.BeginReceive(null, null);
-                var endPointAcceso = new IPEndPoint(ipAcceso, puertoAcceso);
-                var t = recibir.AsyncWaitHandle;
-                while (true)
+                var envio = new TcpClient(ipAcceso, puertoAcceso);
+                var pedidor = new BinaryWriter(envio.GetStream());
+                pedidor.Write(((byte)6));
+                pedidor.Flush();
+                envio.Close();
+                receivestart:
+                var respondedor=mitcp.AcceptTcpClient();
+                List<byte> paquete = new List<byte>();
+                var st = respondedor.GetStream();
+                int puerto = 0;
+                for(int i=0; i<4; i++)
                 {
-                    Thread.Sleep(300);
-                    if (recibir.IsCompleted)
+                    puerto += (st.ReadByte() << (8 * i));
+                }
+                while(true)
+                {
+                    int a = st.ReadByte();
+                    if(a>=0)
                     {
-                        break;
+                        paquete.Add((byte)a);
                     }
                     else
                     {
-                        udp.BeginSend(peticionInicio, 1, new IPEndPoint(ipAcceso, puertoAcceso), null, null);
+                        break;
                     }
                 }
-                IPEndPoint remitente = null;
-                var temp=udp.EndReceive(recibir, ref remitente);
-                List<IPEndPoint> destinos = null;
-                List<byte[]> IDs = null;
-                UdpReceiveResult mensaje = new UdpReceiveResult(temp, remitente);
-                if (temp[0]==9)
+                respondedor.Close();
+                if (paquete[0] == 9)
+                    goto receivestart;
+                List<IPEndPoint> destinos;
+                List<byte[]> IDs;
+                var mensaje = new UdpReceiveResult(paquete.ToArray(), new IPEndPoint((respondedor.Client.RemoteEndPoint as IPEndPoint).Address, Chord.port));
+                var response = ProcesaMensajeConID(mensaje, out destinos, out IDs);
+                for(int i=0; i<response.Count;i++)
                 {
-                    goto receiveStart;
+                    var actualresponse = response[i];
+                    var actualip = destinos[i];
+                    TcpClient enviadorinicial = new TcpClient(destinos[i].AddressFamily.ToString(), destinos[i].Port);
+                    st = enviadorinicial.GetStream();
+                    BinaryWriter bin = new BinaryWriter(st);
+                    bin.Write(Chord.port);
+                    bin.Write(actualresponse);
+                    bin.Flush();
+                    enviadorinicial.Close();
                 }
-                else if(temp[0]==0)
-                {
-                    var response=ProcesaMensajeConID(mensaje,out destinos,out IDs);
-                    for(int i=0; i<response.Count;i++)
-                    {
-                        udp.BeginSend(response[i], response[i].Length,endPointAcceso, null, null);
-                    }
-                    goto receiveStart;
-                }
-                else if(temp[0]==8)
-                {
-                    var response = ProcesaMensajeConID(mensaje, out destinos, out IDs);
-                }
+                if(paquete[0]!=8)
+                    goto receivestart;
             }
             
         }
@@ -792,7 +802,13 @@ namespace Proyecto_de_Distribuidos_01
                 }
                 sacado.stopwatch.Restart();
                 sacado.Tries++;
-                udp.Send(sacado.Mensaje, sacado.Mensaje.Length, sacado.DestinouOrigen);
+                var enviador = new TcpClient(sacado.DestinouOrigen.Address.ToString(), sacado.DestinouOrigen.Port);
+                var st = enviador.GetStream();
+                var bin=new BinaryWriter(st);
+                bin.Write(Chord.port);
+                bin.Write(sacado.Mensaje);
+                bin.Flush();
+                enviador.Close();
                 if(sacado.tipo!=9)
                    ColaYaEnviado.Enqueue(sacado);
             }
@@ -872,6 +888,10 @@ namespace Proyecto_de_Distribuidos_01
             if (lista.Count < (1 << ReplicationLevel))
                 goto start;
             var resp1 = lista.ToList();
+            for(int i=0;i<resp1.Count;i++)
+            {
+                resp1[i]=new IPEndPoint(resp1[i].Address,resp1[i].Port+1);
+            }
             //resp1.RemoveAll(i => comp.Equals(i, new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port)));
             return resp1;
         }
@@ -922,8 +942,28 @@ namespace Proyecto_de_Distribuidos_01
             while (true)
             {
                 IPEndPoint origen=null;
-
-                byte[] mensaje=udp.Receive(ref origen);
+                var receptorTCP = mitcp.AcceptTcpClient();
+                var st = receptorTCP.GetStream();
+                List<byte> mensajeEnLista = new List<byte>();
+                int port = 0;
+                for(int i=0; i<4; i++)
+                {
+                    port += (st.ReadByte() << (8 * i));
+                }
+                origen = new IPEndPoint((receptorTCP.Client.RemoteEndPoint as IPEndPoint).Address, port);
+                while(true)
+                {
+                    int temp = st.ReadByte();
+                    if(temp>=0)
+                    {
+                        mensajeEnLista.Add((byte)temp);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                byte[] mensaje=mensajeEnLista.ToArray();
                 //receiver = udp.BeginReceive(null, null);
                 //if (comp.Equals(origen, new IPEndPoint(IPAddress.Parse("192.168.1.102"), 7001))&&mensaje[0]==1)
                 //    ;
@@ -969,8 +1009,6 @@ namespace Proyecto_de_Distribuidos_01
 
                 for(int i=0; i<response.Count;i++)
                 {
-                    if (response[i][0] == 5 &&!comp.Equals(destino[i], new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port)))
-                        ;
                     ColaAEnviar.Enqueue(new Paquete(response[i], destino[i]));
                 }
             }
@@ -981,7 +1019,7 @@ namespace Proyecto_de_Distribuidos_01
             ChordSystem();
             List<object> Parametro = new List<object>(2);
             //Console.WriteLine("Escribe el máximo numero de intentos");
-            int Tries = 3;
+            int Tries = 0;
             Parametro.Add(Tries);
             //Console.WriteLine("Escribe el tiempo a esperar antes de otro reintento para los mensajes normales en ms");
             long tiempoMaximo = 100;
