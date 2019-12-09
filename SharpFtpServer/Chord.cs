@@ -708,15 +708,16 @@ namespace Proyecto_de_Distribuidos_01
                 var ipAcceso = Console.ReadLine();
                 Console.WriteLine("Escriba el puerto de acceso");
                 int puertoAcceso = int.Parse(Console.ReadLine());
-                byte[] peticionInicio = new byte[1];
-                peticionInicio[0] = 6;
                 Stopwatch stopwatch = new Stopwatch();
+            
                 var envio = new TcpClient(ipAcceso, puertoAcceso);
                 var pedidor = new BinaryWriter(envio.GetStream());
+                pedidor.Write(Chord.port);
+                pedidor.Flush();
                 pedidor.Write(((byte)6));
                 pedidor.Flush();
                 envio.Close();
-                receivestart:
+            receivestart:
                 var respondedor=mitcp.AcceptTcpClient();
                 List<byte> paquete = new List<byte>();
                 var st = respondedor.GetStream();
@@ -737,18 +738,18 @@ namespace Proyecto_de_Distribuidos_01
                         break;
                     }
                 }
-                respondedor.Close();
                 if (paquete[0] == 9)
                     goto receivestart;
                 List<IPEndPoint> destinos;
                 List<byte[]> IDs;
-                var mensaje = new UdpReceiveResult(paquete.ToArray(), new IPEndPoint((respondedor.Client.RemoteEndPoint as IPEndPoint).Address, Chord.port));
+                var mensaje = new UdpReceiveResult(paquete.ToArray(), new IPEndPoint((respondedor.Client.RemoteEndPoint as IPEndPoint).Address, puerto));
+                respondedor.Close();
                 var response = ProcesaMensajeConID(mensaje, out destinos, out IDs);
                 for(int i=0; i<response.Count;i++)
                 {
                     var actualresponse = response[i];
                     var actualip = destinos[i];
-                    TcpClient enviadorinicial = new TcpClient(destinos[i].AddressFamily.ToString(), destinos[i].Port);
+                    TcpClient enviadorinicial = new TcpClient(destinos[i].Address.ToString(), destinos[i].Port);
                     st = enviadorinicial.GetStream();
                     BinaryWriter bin = new BinaryWriter(st);
                     bin.Write(Chord.port);
@@ -948,9 +949,12 @@ namespace Proyecto_de_Distribuidos_01
                 int port = 0;
                 for(int i=0; i<4; i++)
                 {
-                    port += (st.ReadByte() << (8 * i));
+                    int temp = st.ReadByte();
+                    if (temp >= 0)
+                        port += (temp << (8 * i));
+                    else
+                        Console.WriteLine("Se partio en " + i);
                 }
-                origen = new IPEndPoint((receptorTCP.Client.RemoteEndPoint as IPEndPoint).Address, port);
                 while(true)
                 {
                     int temp = st.ReadByte();
@@ -963,6 +967,7 @@ namespace Proyecto_de_Distribuidos_01
                         break;
                     }
                 }
+                origen = new IPEndPoint((receptorTCP.Client.RemoteEndPoint as IPEndPoint).Address, port);
                 byte[] mensaje=mensajeEnLista.ToArray();
                 //receiver = udp.BeginReceive(null, null);
                 //if (comp.Equals(origen, new IPEndPoint(IPAddress.Parse("192.168.1.102"), 7001))&&mensaje[0]==1)
@@ -977,12 +982,6 @@ namespace Proyecto_de_Distribuidos_01
                 if (origen == null)
                     continue;
                 Paquete LePaquet = new Paquete(mensaje, origen);
-                if(YaRecibidos.Contains(LePaquet))
-                {
-                    continue;
-                }
-                else
-                {
                     if (LePaquet.tipo == 6)
                         Listade6.Add(origen);
                     YaRecibidos.Add(LePaquet);
@@ -992,7 +991,6 @@ namespace Proyecto_de_Distribuidos_01
                         var temp = ColaYaRecibidos.Dequeue();
                         YaRecibidos.Remove(temp);
                     }
-                }
                 UdpReceiveResult recibido = new UdpReceiveResult(mensaje, origen);
                 Paquete paquete = new Paquete(recibido);
                 bool dummy;
