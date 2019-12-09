@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Collections.Concurrent;
 using System.IO;
+using ConsoleApp8;
 
 namespace Proyecto_de_Distribuidos_01
 {
@@ -142,6 +143,7 @@ namespace Proyecto_de_Distribuidos_01
 
     class Chord
     {
+        public static object bloqueoParaLosNuevos = new object();
         public static bool SoyElPrimero = false;
         static HashSet<Task> Tareas = new HashSet<Task>();
         static Dictionary<Task, Task> RelacionDelayTarea = new Dictionary<Task, Task>();
@@ -649,7 +651,7 @@ namespace Proyecto_de_Distribuidos_01
 
         public static bool EnRango(byte[] elemento, byte[] topeIzquierdo, byte[] topeDerecho)
         {
-            return (comp.Compare(Resta(elemento, VecinoInf), Resta(ID, VecinoInf)) <= 0);
+            return (comp.Compare(Resta(elemento,topeIzquierdo),Resta(elemento,topeDerecho))<=0);
         }
         public static int DeQuienEsLaTarea(byte[] key2)
         {
@@ -718,25 +720,35 @@ namespace Proyecto_de_Distribuidos_01
                 pedidor.Flush();
                 envio.Close();
             receivestart:
-                var respondedor=mitcp.AcceptTcpClient();
-                List<byte> paquete = new List<byte>();
-                var st = respondedor.GetStream();
+                TcpClient respondedor = null;
                 int puerto = 0;
-                for(int i=0; i<4; i++)
+                List<byte> paquete = new List<byte>();
+                Stream st=null;
+                try
                 {
-                    puerto += (st.ReadByte() << (8 * i));
+                   respondedor = mitcp.AcceptTcpClient();
+                    
+                    st = respondedor.GetStream();
+                    for (int i = 0; i < 4; i++)
+                    {
+                        puerto += (st.ReadByte() << (8 * i));
+                    }
+                    while (true)
+                    {
+                        int a = st.ReadByte();
+                        if (a >= 0)
+                        {
+                            paquete.Add((byte)a);
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
-                while(true)
+                catch
                 {
-                    int a = st.ReadByte();
-                    if(a>=0)
-                    {
-                        paquete.Add((byte)a);
-                    }
-                    else
-                    {
-                        break;
-                    }
+                    goto receivestart;
                 }
                 if (paquete[0] == 9)
                     goto receivestart;
@@ -886,8 +898,6 @@ namespace Proyecto_de_Distribuidos_01
             }
                 foreach (var t in threads)
                     t.Join(500);
-            if (lista.Count < (1 << ReplicationLevel))
-                goto start;
             var resp1 = lista.ToList();
             for(int i=0;i<resp1.Count;i++)
             {
@@ -932,6 +942,200 @@ namespace Proyecto_de_Distribuidos_01
             }
         }
 
+        public static List<byte[]> Preprocesa3(UdpReceiveResult tipo5, out List<IPEndPoint> destino, out List<byte[]> IDs)
+        {
+            byte[] mensajesinId = new byte[25];
+            for (int i = 1; i < 25; i++)
+                mensajesinId[i] = tipo5.Buffer[i + 8];
+            mensajesinId[0] = 5;
+            return Preprocesa2(new UdpReceiveResult(mensajesinId,tipo5.RemoteEndPoint), out destino, out IDs);
+        }
+        public static List<byte[]> Preprocesa2(UdpReceiveResult tipo5, out List<IPEndPoint> destino, out List<byte[]> IDs)
+        {
+            destino = new List<IPEndPoint>();
+            IDs = new List<byte[]>();
+            var response = PreprocesaUnion(tipo5, out destino, out IDs);
+            List<byte[]> finalResponse = new List<byte[]>();
+            foreach (var a in response)
+            {
+                byte[] NewResponse = new byte[a.Length + 8];
+                for (int i = 1; i < a.Length; i++)
+                {
+                    NewResponse[i + 8] = a[i];
+                }
+                NewResponse[0] = a[0];
+                Monitor.Enter(CountLock);
+                for (int i = 0; i < 8; i++)
+                {
+                    NewResponse[i + 1] = (byte)(MessageID >> (i * 8));
+                }
+                MessageID++;
+                Monitor.Exit(CountLock);
+
+                finalResponse.Add(NewResponse);
+            }
+            if (tipo5.Buffer[0] != 9 && tipo5.Buffer[0] != 6)
+            {
+                byte[] ACK = new byte[9];
+                ACK[0] = 9;
+                for (int i = 1; i < ACK.Length; i++)
+                {
+                    ACK[i] = tipo5.Buffer[i];
+                }
+                finalResponse.Add(ACK);
+                destino.Add(tipo5.RemoteEndPoint);
+            }
+            return finalResponse;
+        }
+        public static List<byte[]> PreprocesaUnion(UdpReceiveResult tipo5, out List<IPEndPoint> destino, out List<byte[]> IDs)
+        {
+            destino = new List<IPEndPoint>();
+            IDs = new List<byte[]>();
+            byte[] key2 = new byte[16];
+            byte[] tempresponse = new byte[25];
+            for (int i = 0; i < 16; i++)
+            {
+                key2[i] = tipo5.Buffer[i + 1];
+            }
+            string ip = "";
+            int portnum = 0;
+            for (int i = 17; i < 20; i++)
+            {
+                ip += tipo5.Buffer[i] + ".";
+            }
+            ip += tipo5.Buffer[20];
+            for (int i = 0; i < 4; i++)
+            {
+                portnum += tipo5.Buffer[i + 21] << (i * 8);
+            }
+            IPEndPoint nuevo = new IPEndPoint(IPAddress.Parse(ip), portnum);
+            IPEndPoint yo = new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port);
+            if (comp.Equals(nuevo, yo))
+                return new List<byte[]>();
+            byte[] nuevoID = Suma(VecinoInf, Divide(Resta(ID, VecinoInf), 2));
+            if (comp.Compare(nuevoID, ID) == 0)
+            {
+                for (int i = 0; i < 16; i++)
+                    nuevoID[i] = ID[i];
+                nuevoID[0] += 128;
+            }
+            if (EnRango(key2, VecinoInf, ID) || comp.Equals(VecinoInf, ID))
+            {
+                Thread a = new Thread(new ParameterizedThreadStart(TransfiereAlVecino));
+                List<object> Params = new List<object>();
+                Params.Add(VecinoInf);
+                Params.Add(nuevoID);
+                Params.Add(tipo5);
+                a.Start(Params);
+            }
+            //if ((EnRango(key2, VecinoInf, ID) || comp.Equals(VecinoInfIp, yo))&&(NodoNuevo==null||Monitor.TryEnter(NodoNuevo)))
+            //{
+            //    Thread a = new Thread(new ParameterizedThreadStart(TransfiereAlVecino));
+            //    List<object> Params = new List<object>();
+            //    Params.Add(VecinoInf);
+            //    Params.Add(nuevo);
+            //    Params.Add(Tipo5);
+            //    NodoNuevo = a;
+            //    var vecinotemp = VecinoInf;
+            //    var iptemp = VecinoInfIp;
+            //    response = ProcesaMensaje(tipo5, out destino, out IDs);
+            //    VecinoInf = vecinotemp;
+            //    VecinoInfIp = iptemp;
+            //    a.Start(Params);
+
+            //    if (response.Count > 0)
+            //        ParaElNuevo = new Paquete(response[0], destino[0]);
+            //    Monitor.Exit(NodoNuevo);
+            //}
+            return new List<byte[]>();
+        }
+
+        static ConcurrentDictionary<byte[], bool> Bypasser = new ConcurrentDictionary<byte[], bool>(comp);
+        public static void TransfiereAlVecino(object Params)
+        {
+            Monitor.Enter(bloqueoParaLosNuevos);
+            var listadeParams = Params as List<object>;
+            byte[] inf = listadeParams[0] as byte[];
+            byte[] sup = listadeParams[1] as byte[];
+            var mensaje = ((UdpReceiveResult)listadeParams[2]);
+            string ip = "";
+            for (int i = 17; i < 20; i++)
+            {
+                ip += mensaje.Buffer[i] + ".";
+            }
+            ip += mensaje.Buffer[20];
+            int portnum = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                portnum += mensaje.Buffer[i + 21] << (i * 8);
+            }
+            IPEndPoint Vecino = new IPEndPoint(IPAddress.Parse(ip),portnum);
+            List<string> TodosLosArchivos = new List<string>();
+            foreach (var a in Directory.GetDirectories(SharpFtpServer.ClientConnection._root))
+                GetFiles(a, ref TodosLosArchivos);
+            foreach (var b in Directory.GetFiles(SharpFtpServer.ClientConnection._root))
+                TodosLosArchivos.Add(b);
+            List<string> ArchivosFiltrados = new List<string>();
+            byte[] sha = new byte[16];
+            foreach (var archivo in TodosLosArchivos)
+            {
+                var temp = Hasher.ComputeHash(Encoding.ASCII.GetBytes(archivo));
+                //faltareplicas
+                for (int i = 0; i < 16; i++)
+                {
+                    sha[i] = temp[i];
+                }
+                for (int i = 0; i < 1 << ReplicationLevel; i++)
+                {
+                    sha[0] += (byte)(i << 8 - ReplicationLevel);
+                    if (EnRango(sha, inf, sup))
+                        ArchivosFiltrados.Add(archivo);
+                }
+            }
+
+            TCP_Client t = new TCP_Client(new TcpClient(Vecino.Address.ToString(), Vecino.Port));
+            foreach (var archivo in ArchivosFiltrados)
+            {
+            beginning:
+                try
+                {
+                    var fs = new FileStream(archivo, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+
+                    t.StoreFile(fs, archivo);
+                }
+                catch
+                {
+                    Thread.Sleep(100);
+                    goto beginning;
+                }
+            }
+            byte[] Repetido = new byte[mensaje.Buffer.Length + 8];
+            Monitor.Enter(CountLock);
+            Repetido[0] = mensaje.Buffer[0];
+            for (int i = 9; i < Repetido.Length; i++)
+            {
+                Repetido[i] = mensaje.Buffer[i - 8];
+            }
+            for (int i = 0; i < 8; i++)
+            {
+                Repetido[i + 1] = (byte)(MessageID >> (i * 8));
+            }
+            MessageID++;
+            Monitor.Exit(CountLock);
+            Paquete ElAtrasado = new Paquete(Repetido, new IPEndPoint(IPAddress.Parse("127.0.0.1"), port));
+            Bypasser[Repetido] = true;
+            ColaAEnviar.Enqueue(ElAtrasado);
+            Monitor.Exit(bloqueoParaLosNuevos);
+        }
+
+        private static void GetFiles(string a, ref List<string> todosLosArchivos)
+        {
+            foreach (var b in Directory.GetDirectories(a))
+                GetFiles(b, ref todosLosArchivos);
+            foreach (var b in Directory.GetFiles(a))
+                todosLosArchivos.Add(b);
+        }
 
         public static void Receptor()
         {
@@ -1000,8 +1204,12 @@ namespace Proyecto_de_Distribuidos_01
                 List<byte[]> IDs;
                 if (recibido.Buffer[0] == 4)
                     ;
+                List<byte[]> response;
                 var temp2 = new UdpReceiveResult(recibido.Buffer.Clone() as byte[], recibido.RemoteEndPoint);
-                var response=ProcesaMensajeConID(temp2, out destino, out IDs);
+                if (temp2.Buffer[0] == 5 && !Bypasser.TryRemove(temp2.Buffer, out dummy))
+                    response=Preprocesa3(temp2, out destino, out IDs);
+                else
+                    response=ProcesaMensajeConID(temp2, out destino, out IDs);
                 
                 
 
