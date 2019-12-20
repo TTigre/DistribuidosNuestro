@@ -1206,10 +1206,10 @@ namespace Proyecto_de_Distribuidos_01
                     ;
                 List<byte[]> response;
                 var temp2 = new UdpReceiveResult(recibido.Buffer.Clone() as byte[], recibido.RemoteEndPoint);
-                if (temp2.Buffer[0] == 5 && !Bypasser.TryRemove(temp2.Buffer, out dummy))
-                    response=Preprocesa3(temp2, out destino, out IDs);
-                else
-                    response=ProcesaMensajeConID(temp2, out destino, out IDs);
+                //if (temp2.Buffer[0] == 5 && !Bypasser.TryRemove(temp2.Buffer, out dummy))
+                //    response=Preprocesa3(temp2, out destino, out IDs);
+                //else
+                response=ProcesaMensajeConID(temp2, out destino, out IDs);
                 
                 
 

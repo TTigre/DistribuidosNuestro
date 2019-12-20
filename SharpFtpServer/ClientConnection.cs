@@ -290,7 +290,7 @@ namespace SharpFtpServer
         private FileStructureType _fileStructureType = FileStructureType.File;
 
         private string _username;
-        private string _root;
+        public static string _root= @"C:\Test";
         private string _currentDirectory;
         private IPEndPoint _dataEndpoint;
         private IPEndPoint _remoteEndPoint;
@@ -497,7 +497,8 @@ namespace SharpFtpServer
 
                             // Extensions defined by rfc 2228
                             case "AUTH":
-                                response = Auth(arguments);
+                                response = "502 Command not allowed";
+                                //response = Auth(arguments);
                                 break;
 
                             // Extensions defined by rfc 2389
@@ -1404,8 +1405,8 @@ namespace SharpFtpServer
             long parts = files[0].Parts;
             string filename = files[0].Name;
                 bytes += RetrieveStream(filename,dataStream, parts);
-                if (bytes == 0)
-                    return "552 Requested file action aborted.";
+                //if (bytes == 0)
+                //    return "552 Requested file action aborted.";
            
 
             return "226 Closing data connection, file transfer successful";
@@ -1424,14 +1425,17 @@ namespace SharpFtpServer
             StreamReader sr = new StreamReader(directoryname);
             directories = serializer2.Deserialize(sr) as List<MyDirectory>;
             sr.Dispose();
-            string descname = pathname + ticks + ".info";
-            foreach (var b in directories.Where(i => i.Realname == pathname))
-                descname = b.Realname + ticks + ".info";
+            string descname = pathname + ticks;
+            bool yaesta = false;
+            foreach (var b in directories.Where(i => i.Name == pathname))
+            {
+                yaesta = true;
+            }
             long bytes = 0;
 
             bytes = StoreStream(dataStream, pathname, ticks, 0);
-            if (bytes == 0)
-                return "552 Requested file action aborted.";
+            //if (bytes == 0)
+            //    return "552 Requested file action aborted.";
             string dirname = ParentDirectory(pathname);
             if (!GetDirectory(pathname, false))
                 return "552 Requested file action aborted.";
@@ -1444,32 +1448,39 @@ namespace SharpFtpServer
             else
                 directory = new FileStream(dirname, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             directory.Position = 0;
-            FileStream descriptor = DirectoryMethods.CreateDescriptor(pathname + ticks, bytes);
+            byte[] buffer;
+            FileStream descriptor = DirectoryMethods.CreateDescriptor(descname, bytes);
             List<IPEndPoint> descEnd = Whois(descname);
             descriptor.Position = 0;
-            byte[] buffer = new byte[descriptor.Length];
+            buffer = new byte[descriptor.Length];
             descriptor.Read(buffer, 0, buffer.Length);
             descriptor.Position = 0;
             descriptor.Dispose();
             foreach (var end in descEnd)
-                {
-                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
-                    if (!client.StoreFile(buffer, descname))
-                        return "552 Requested file action aborted.";
-                }
-           
-                DirectoryMethods.AddAtDirectory(directory, pathname,descname,bytes, true);
-                List<IPEndPoint> dirEnd = Whois(dirname);
+            {
+                TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                if (!client.StoreFile(buffer, descname))
+                    return "552 Requested file action aborted.";
+            }
+            if (yaesta)
+            {
+                DirectoryMethods.ChangeAtDirectory(directory, pathname, descname, bytes, true);
+            }
+            else
+            {
+                DirectoryMethods.AddAtDirectory(directory, pathname, descname, bytes, true);
+            }
+            List<IPEndPoint> dirEnd = Whois(dirname);
             directory.Position = 0;
             buffer = new byte[directory.Length];
             directory.Read(buffer, 0, buffer.Length);
             directory.Position = 0;
             foreach (var end in dirEnd)
-                {
-                    TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
-                    if (!client.StoreFile(buffer, dirname))
-                        return "552 Requested file action aborted.";
-                }
+            {
+                TCP_Client client = new TCP_Client(new TcpClient(end.Address.ToString(), end.Port));
+                if (!client.StoreFile(buffer, dirname))
+                    return "552 Requested file action aborted.";
+            }
 
             UnlockDirectory(dirname);
 
@@ -1484,7 +1495,7 @@ namespace SharpFtpServer
                 CSBytes = bytes.ToString()
             };
 
-      
+
 
             return "226 Closing data connection, file transfer successful";
         }

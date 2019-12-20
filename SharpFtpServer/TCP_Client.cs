@@ -34,27 +34,32 @@ namespace ConsoleApp8
         }
         public byte[] SearchFile(string name)
         {
-            byte[] bytes = Encoding.UTF8.GetBytes(name);
-            _controlWriter.Write(bytes.Length + 5);
-            _controlWriter.Write((byte)0);
-            _controlWriter.Write(bytes, 0, bytes.Length);
-            int length = _controlReader.ReadInt32() - 4;
-            byte instruction = _controlReader.ReadByte();
-            if(instruction==7)
+            try
             {
-                int namelength = _controlReader.ReadInt32();
-                byte[] file = _controlReader.ReadBytes(namelength);
-                string filename = Encoding.UTF8.GetString(file);
-                if(filename==name)
+                byte[] bytes = Encoding.UTF8.GetBytes(name);
+                _controlWriter.Write(bytes.Length + 5);
+                _controlWriter.Write((byte)0);
+                _controlWriter.Write(bytes, 0, bytes.Length);
+                int length = _controlReader.ReadInt32() - 4;
+                byte instruction = _controlReader.ReadByte();
+                if (instruction == 7)
                 {
-                    return _controlReader.ReadBytes(length - 5 - namelength);
+                    int namelength = _controlReader.ReadInt32();
+                    byte[] file = _controlReader.ReadBytes(namelength);
+                    string filename = Encoding.UTF8.GetString(file);
+                    if (filename == name)
+                    {
+                        return _controlReader.ReadBytes(length - 5 - namelength);
+                    }
                 }
             }
+            catch { }
             return new byte[0];
 
         }
         public bool DeleteFile(string name)
         {
+            try { 
             byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 5);
             _controlWriter.Write((byte)5);
@@ -70,11 +75,14 @@ namespace ConsoleApp8
                 if (resp == "SI" && filename == name)
                     return true;
             }
+            }
+            catch { }
             return false;
         }
 
         public bool LockFile(string name, byte[] sha, bool IsRead=true)
         {
+            try { 
             byte type = 1;
             if (!IsRead)
                 type = 9;
@@ -94,10 +102,13 @@ namespace ConsoleApp8
                 if (resp == "SI" && filename == name)
                     return true;
             }
+            }
+            catch { }
             return false;
         }
         public bool UnlockFile(string name, byte[] sha)
         {
+            try { 
             byte[] bytes = Encoding.UTF8.GetBytes(name);
             _controlWriter.Write(bytes.Length + 21);
             _controlWriter.Write((byte)8);
@@ -114,10 +125,13 @@ namespace ConsoleApp8
                 if (resp == "SI" && filename == name)
                     return true;
             }
+            }
+            catch { }
             return false;
         }
         public bool StoreFile(byte[] file, string name, int count=-1)
         {
+            try { 
             if (count == -1)
                 count = file.Length;
             byte[] bytes = Encoding.UTF8.GetBytes(name);
@@ -125,7 +139,8 @@ namespace ConsoleApp8
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
             _controlWriter.Write(bytes, 0, bytes.Length);
-            _controlWriter.Write(file, 0, count);
+            if (count > 0)
+                _controlWriter.Write(file, 0, count);
             int length = _controlReader.ReadInt32() - 4;
             byte instruction = _controlReader.ReadByte();
             if (instruction == 3)
@@ -137,10 +152,13 @@ namespace ConsoleApp8
                 if (resp == "SI" && filename == name)
                     return true;
             }
+            }
+            catch { }
             return false;
         }
         public bool StoreFile(char[] file, string name, int count = -1)
         {
+            try { 
             if (count == -1)
                 count = file.Length;
             byte[] bytes = Encoding.UTF8.GetBytes(name);
@@ -148,6 +166,7 @@ namespace ConsoleApp8
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
             _controlWriter.Write(bytes, 0, bytes.Length);
+            if(count>0)
             _controlWriter.Write(file, 0, count);
             int length = _controlReader.ReadInt32() - 4;
             byte instruction = _controlReader.ReadByte();
@@ -160,10 +179,13 @@ namespace ConsoleApp8
                 if (resp == "SI" && filename == name)
                     return true;
             }
+            }
+            catch { }
             return false;
         }
         public bool StoreFile(Stream file, string name)
         {
+            try { 
             file.Position = 0;
             byte[] buffer = new byte[file.Length];
             file.Read(buffer, 0, buffer.Length);
@@ -173,6 +195,7 @@ namespace ConsoleApp8
             _controlWriter.Write((byte)4);
             _controlWriter.Write(bytes.Length);
             _controlWriter.Write(bytes, 0, bytes.Length);
+            if(buffer.Length>0)
             _controlWriter.Write(buffer, 0, buffer.Length);
             int length = _controlReader.ReadInt32() - 4;
             byte instruction = _controlReader.ReadByte();
@@ -185,6 +208,8 @@ namespace ConsoleApp8
                 if (resp == "SI" && filename == name)
                     return true;
             }
+            }
+            catch { }
             return false;
         }
         public void Answer(object obj)
@@ -362,7 +387,7 @@ namespace ConsoleApp8
                     wasdone = true;
                 }
                 else
-                    fs = new FileStream(pathname, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    fs = new FileStream(pathname, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
                 fs.Position = 0;
                 CopyStream(data, fs, length + 5);
                 if(!wasdone)
@@ -513,7 +538,7 @@ namespace ConsoleApp8
                 {
                     respuestica[i + 32] = bytes[i];
                 }
-                for(int i=0;i<1<<replicacion;i++)
+                for(int i=0;i<receivers.Count;i++)
                 {
                     if (Chord.comp.Equals(new IPEndPoint(IPAddress.Parse("127.0.0.1"), Chord.port+1), receivers[i]))
                         continue;
@@ -602,7 +627,7 @@ namespace ConsoleApp8
 
         private void CopyStream(byte[] buffer, Stream output, int offset)
         {
-
+            if(buffer.Length>0)
             output.Write(buffer, offset, buffer.Length - offset);
         }
 

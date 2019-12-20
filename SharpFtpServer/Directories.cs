@@ -96,7 +96,26 @@ namespace SharpFtpServer
             directory.Position = 0;
             return directory;
         }
-       
-        
+        public static FileStream ChangeAtDirectory(FileStream directory, string name, string realname, long size, bool isfile = false)
+        {
+            List<MyDirectory> directories = new List<MyDirectory>();
+            XmlSerializer serializer = new XmlSerializer(directories.GetType(), new XmlRootAttribute("MyDirectory"));
+            directories = serializer.Deserialize(new StreamReader(directory)) as List<MyDirectory>;
+            foreach(var i in directories.Where(k => k.Name == name))
+            {
+                i.Realname = realname;
+                i.Date = System.DateTime.Now;
+                i.Size = size;
+                i.IsFile = isfile;
+            }
+            directory.Position = 0;
+            directory.SetLength(0);
+            directory.Flush();
+            StreamWriter w = new StreamWriter(directory);
+            serializer.Serialize(w, directories);
+            directory.Position = 0;
+            return directory;
+        }
+
     }
 }
